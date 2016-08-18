@@ -1,0 +1,2 @@
+python import.py
+pause

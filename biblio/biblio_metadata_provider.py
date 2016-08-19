@@ -28,7 +28,23 @@ class base_biblio(object):
 
 class authors(base_biblio):
     def __init__(self, f):
-        super( authors, self ).__init__( f )
+        def format_names(elem):
+            d = dict((x.get("Label"), x.text) for x in elem)
+            #last, first for now check with https://guidelines.openaire.eu/en/latest/literature/field_creator.html#dc-creator
+            first = d.get('First name')
+            last = d.get('Last name')
+            if first == last == None:
+                _logger.error("No names for %s", elem.get('Id'))
+                return None
+            ret = ""
+            if last is not None:
+                ret += last
+                if first is not None:
+                    ret += ", "
+            if first is not None:
+                ret += first
+            return ret
+        super( authors, self ).__init__( f, format_names )
 
 
 class grants(base_biblio):
@@ -49,7 +65,9 @@ class publications(base_biblio):
         def filter_ids(elem):
             d = dict((x.get("Label"), x.text) for x in elem)
             supported = d.get("Supported by", "") or ""
+            auths = d.get("Author(s)", "") or ""
             d["Supported by"] = set(supported.split(";"))
+            d["Author(s)"] = set(auths.split(";"))
             return d if 0 < len(d["Supported by"] & ids) else None
         super( publications, self ).__init__( f, filter_ids )
 
@@ -57,7 +75,7 @@ class publications(base_biblio):
 class biblio(object):
 
     dc_template = u"""
-<oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:doc="http://www.lyncode.com/xoai" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:dc="http://purl.org/dc/elements/1.1/" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/ http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
+<oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:dc="http://purl.org/dc/elements/1.1/" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/ http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
 %s
 </oai_dc:dc>
 """
@@ -70,7 +88,32 @@ class biblio(object):
 
     def to_dc(self, identifier):
         rec = self.publications.ids[identifier]
-        dc_metadata = u"<dc:title>%s</dc:title>" % rec["Title"]
+        #Mandatory fields
+        dc_title = '\n'.join([u"<dc:title>%s</dc:title>" % rec[title_field] if rec[title_field] is not None else ""
+                              for title_field in ["Title", "Original title", "English title", "Czech title"]])
+        dc_creators = ""
+        try:
+            dc_creators = u"\n".join([ u"<dc:creator>%s</dc:creator>" % self.authors.ids[author_id] for author_id in rec.get("Author(s)")])
+        except KeyError:
+            _logger.error("Error fetching authors for %s", identifier)
+#        # Project identifier info:eu-repo/grantAgreement
+#        dc_relation =
+#        #Access level info:eu-repo/semantics
+#        dc_rights
+#        #XXX: subject/keywords nothing to map?
+#        #dc_subject
+#        #EnglishAbstract
+#        dc_description
+#        #Publisher
+#        dc_publisher
+#        #publication date
+#        #Use Year for now, there is also a date field
+#        dc_date
+#        #publication type info:eu-repo/semantics/
+#        dc_type
+#        #XXX: resource identifier, (URL,DOI,URN:NBN,ISBN,ISSN,etc.), do we put there biblio URL, if URL is empty?
+#        dc_identifier
+        dc_metadata = dc_title + '\n' + dc_creators
         return biblio.dc_template % dc_metadata
 
 

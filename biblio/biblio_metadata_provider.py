@@ -126,7 +126,7 @@ class biblio(object):
 
     def __init__(self, d):
         # List of openaire projects as used and fetched by dspace. [dspace]/config/openaire-cache.list
-        self.openaire = Openaire(os.path.join(d, "openaire-cache.list"))
+        self.openaire = Openaire(os.path.join("input_openaire", "openaire-cache.list"))
         self.authors = authors(os.path.join(d, "authors.xml"))
         self.grants = grants(os.path.join(d, "grants.xml"), self.openaire)
         self.publications = publications(os.path.join(d, "publications.xml"), self.grants)
@@ -213,7 +213,7 @@ class Provider(object):
     Metadata provider for DDI Codebook XML files.
     """
 
-    def __init__(self, domain_name='biblio.ufal.mff.cuni.cz', directory='./input'):
+    def __init__(self, domain_name='biblio.ufal.mff.cuni.cz', directory='./input_biblio'):
         """
         Initialize the metadata provider.
 

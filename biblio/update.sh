@@ -3,5 +3,5 @@
 pushd biblio_from_svn
 svn update
 popd
-python2.7 import.py
+python import.py
 

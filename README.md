@@ -28,3 +28,4 @@ and then import
 ```
 which calls biblio/biblio_metadata_provider.py .
 
+Nginx serving this web app may need path tweaking in kuha/oai/static

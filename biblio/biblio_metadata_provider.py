@@ -147,6 +147,7 @@ class biblio( object ):
     # https://guidelines.openaire.eu/en/latest/literature/field_publicationtype.html
     type_mapping = {
         "Article": "info:eu-repo/semantics/article",
+
         "Inproceedings": "info:eu-repo/semantics/conferenceObject",
         "InProceedingsWithoutISBN": "info:eu-repo/semantics/conferenceObject",
         "PosterAbstractDemo": "info:eu-repo/semantics/conferenceObject",
@@ -160,7 +161,7 @@ class biblio( object ):
 
         "Techreport": "info:eu-repo/semantics/report",
 
-        "DataSW": "info:eu-repo/semantics/doctoralThesis",
+        "DataSW": "info:eu-repo/semantics/other",
     }
 
     def __init__(self, d):

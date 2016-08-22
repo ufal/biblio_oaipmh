@@ -29,3 +29,8 @@ and then import
 which calls biblio/biblio_metadata_provider.py .
 
 Nginx serving this web app may need path tweaking in kuha/oai/static
+
+
+## OpenAIRE cached projects
+
+These should be updated on a regular basis as well.

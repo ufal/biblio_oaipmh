@@ -211,7 +211,7 @@ class biblio( object ):
 
         # Mandatory fields
         try:
-            vals["ids"] %= "http://hdl.handle.net/11346/BIBLIO#id=" + identifier
+            vals["ids"] %= "http://hdl.handle.net/11346/BIBLIO@id=" + identifier
 
             # get first title
             for key_title in ["Title", "Original title", "English title", "Czech title"]:

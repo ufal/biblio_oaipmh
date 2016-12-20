@@ -4,39 +4,45 @@
 import os
 import logging
 import xml.etree.ElementTree
+import requests
+import json
+logging.getLogger("requests").setLevel(logging.WARNING)
 from xml.sax.saxutils import escape
+from collections import defaultdict
 
-_logger = logging.getLogger( )
+_logger = logging.getLogger()
 
 
-class base_biblio( object ):
+class base_biblio(object):
+
     def __init__(self, f, ftor=None):
         self.f = f
-        self.ids = { }
-        self._parse( ftor )
+        self.ids = {}
+        self._parse(ftor)
 
     def _parse(self, ftor):
-        root = xml.etree.ElementTree.parse( self.f ).getroot( )
-        for pos, elem in enumerate(root.findall( 'Record' )):
+        root = xml.etree.ElementTree.parse(self.f).getroot()
+        for pos, elem in enumerate(root.findall('Record')):
             if ftor is None:
-                self.ids[elem.get( 'Id' )] = { }
+                self.ids[elem.get('Id')] = {}
             else:
-                v = ftor( elem )
+                v = ftor(elem)
                 if v is not None:
-                    self.ids[elem.get( 'Id' )] = v
-        _logger.info( "Found [%d] entries in [%s]", len( self.ids ), self.f )
+                    self.ids[elem.get('Id')] = v
+        _logger.info("Found [%d] entries in [%s]", len(self.ids), self.f)
 
 
-class authors( base_biblio ):
+class authors(base_biblio):
+
     def __init__(self, f):
         def format_names(elem):
-            d = dict( (x.get( "Label" ), x.text) for x in elem )
+            d = dict((x.get("Label"), x.text) for x in elem)
             # XXX: last, first for now check with
             # https://guidelines.openaire.eu/en/latest/literature/field_creator.html#dc-creator
-            first = d.get( 'First name' )
-            last = d.get( 'Last name' )
+            first = d.get('First name')
+            last = d.get('Last name')
             if first == last and last is None:
-                _logger.error( "No names for %s", elem.get( 'Id' ) )
+                _logger.error("No names for %s", elem.get('Id'))
                 return None
             ret = ""
             if last is not None:
@@ -47,55 +53,56 @@ class authors( base_biblio ):
                 ret += first
             return ret
 
-        super( authors, self ).__init__( f, format_names )
+        super(authors, self).__init__(f, format_names)
 
 
-class grants( base_biblio ):
+class grants(base_biblio):
     supported = ("EU",)
     unsupported_prefixex = ("FP6", )
 
     def __init__(self, f, openaire):
         def filter_ids(elem):
-            d = dict( (x.get( "Label" ), x.text) for x in elem )
-            if d.get( "Agency", "" ) in grants.supported:
-                code = d.get( "Code" )
+            d = dict((x.get("Label"), x.text) for x in elem)
+            if d.get("Agency", "") in grants.supported:
+                code = d.get("Code")
                 for up in grants.unsupported_prefixex:
                     if code.startswith(up):
                         return None
-                openaire_code = grants._get_openaire_id( code, openaire )
+                openaire_code = grants._get_openaire_id(code, openaire)
                 if openaire_code is not None:
-                    d["openaire_id"] = grants._get_openaire_id( code, openaire )
+                    d["openaire_id"] = grants._get_openaire_id(code, openaire)
                     return d
             return None
 
-        super( grants, self ).__init__( f, filter_ids )
+        super(grants, self).__init__(f, filter_ids)
 
     @staticmethod
     def _get_openaire_id(code, openaire):
         code = code.strip()
         if code is None:
             return None
-        ids = code.split( '-' )
-        if ids[-1].isdigit( ):
+        ids = code.split('-')
+        if ids[-1].isdigit():
             id_str = ids[-1]
-        elif len( ids ) > 1 and ids[-2].isdigit( ):
+        elif len(ids) > 1 and ids[-2].isdigit():
             id_str = ids[-2]
         else:
-            _logger.error( "Failed to parse grant code %s", code )
+            _logger.error("Failed to parse grant code %s", code)
             return None
         results = []
-        for openaire_id in openaire.ids.keys( ):
+        for openaire_id in openaire.ids.keys():
             if id_str in openaire_id:
-                results.append( openaire_id )
+                results.append(openaire_id)
 
-        if len( results ) == 1:
+        if len(results) == 1:
             return results[0]
         else:
-            _logger.error( "Failed to uniquely identify openaire project from code %s", code )
+            _logger.error(
+                "Failed to uniquely identify openaire project from code %s", code)
             return None
 
 
-class publications( base_biblio ):
+class publications(base_biblio):
     cannot_handle_yet = [
         "7422113138842492486"
     ]
@@ -105,39 +112,40 @@ class publications( base_biblio ):
     ]
 
     def __init__(self, f, grants_inst):
-        grant_ids = set( grants_inst.ids.keys( ) )
+        grant_ids = set(grants_inst.ids.keys())
 
         def filter_ids(elem):
-            if elem.get( 'Id' ) in publications.cannot_handle_yet:
+            if elem.get('Id') in publications.cannot_handle_yet:
                 return None
             if 0 < len(publications.__dbg_look_for):
-                if elem.get( 'Id' ) not in publications.__dbg_look_for:
+                if elem.get('Id') not in publications.__dbg_look_for:
                     return None
-            d = dict( (x.get( "Label" ), x.text) for x in elem )
-            supported = d.get( "Supported by", "" ) or ""
-            d["Supported by"] = set( supported.split( ";" ) ) & grant_ids
-            authorz = d.get( "Author(s)", "" ) or ""
-            d["Author(s)"] = set( authorz.split( ";" ) )
-            return d if 0 < len( d["Supported by"] ) else None
+            d = dict((x.get("Label"), x.text) for x in elem)
+            supported = d.get("Supported by", "") or ""
+            d["Supported by"] = set(supported.split(";")) & grant_ids
+            authorz = d.get("Author(s)", "") or ""
+            d["Author(s)"] = set(authorz.split(";"))
+            return d if 0 < len(d["Supported by"]) else None
 
-        super( publications, self ).__init__( f, filter_ids )
+        super(publications, self).__init__(f, filter_ids)
 
 
-class Openaire( object ):
+class Openaire(object):
+
     def __init__(self, f):
         self.f = f
-        self.ids = { }
-        self._parse( )
+        self.ids = {}
+        self._parse()
 
     def _parse(self):
-        root = xml.etree.ElementTree.parse( self.f ).getroot( )
-        for elem in root.findall( './/pair' ):
-            id_str = elem.find( "stored-value" ).text
-            self.ids[id_str] = { }
-        _logger.info( "Found [%d] entries in [%s]", len( self.ids ), self.f )
+        root = xml.etree.ElementTree.parse(self.f).getroot()
+        for elem in root.findall('.//pair'):
+            id_str = elem.find("stored-value").text
+            self.ids[id_str] = {}
+        _logger.info("Found [%d] entries in [%s]", len(self.ids), self.f)
 
 
-class biblio( object ):
+class biblio(object):
     dc_template = u"""
 <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:dc="http://purl.org/dc/elements/1.1/" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/ http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
 %s
@@ -164,21 +172,39 @@ class biblio( object ):
         "DataSW": "info:eu-repo/semantics/other",
     }
 
+    access_map_file = "accesses.json"
+
     def __init__(self, d):
-        # List of openaire projects as used and fetched by dspace. [dspace]/config/openaire-cache.list
-        self.openaire = Openaire( os.path.join( "input_openaire", "openaire-cache.list" ) )
-        self.authors = authors( os.path.join( d, "authors.xml" ) )
-        self.grants = grants( os.path.join( d, "grants.xml" ), self.openaire )
-        self.publications = publications( os.path.join( d, "publications.xml" ), self.grants )
+        # List of openaire projects as used and fetched by dspace.
+        # [dspace]/config/openaire-cache.list
+        self.openaire = Openaire(os.path.join(
+            "input_openaire", "openaire-cache.list"))
+        self.authors = authors(os.path.join(d, "authors.xml"))
+        self.grants = grants(os.path.join(d, "grants.xml"), self.openaire)
+        self.publications = publications(
+            os.path.join(d, "publications.xml"), self.grants)
         self.identifiers = self.publications.ids
+        self._cnts = defaultdict(int)
+        self._access_map = json.load(open(biblio.access_map_file, mode="r")) \
+            if os.path.exists(biblio.access_map_file) else {}
+
+    def __del__(self):
+        if 0 < len(self._access_map):
+            json.dump(
+                self._access_map,
+                open(biblio.access_map_file, mode="w+"),
+                indent=2, sort_keys=True
+            )
 
     @staticmethod
     def _fill_values(metadata_key, ftor_get, record_keys, subst_dict, value_mapper=None):
-        values = [ftor_get(k).strip() for k in record_keys if ftor_get(k) is not None]
+        values = [ftor_get(k).strip()
+                  for k in record_keys if ftor_get(k) is not None]
         if value_mapper is not None:
             values = [value_mapper(x) for x in values]
         subst_values = [subst_dict[metadata_key] % escape(x) for x in values]
-        subst_dict[metadata_key] = u'\n'.join([x for x in subst_values if 0 < len(x)]).strip()
+        subst_dict[metadata_key] = u'\n'.join(
+            [x for x in subst_values if 0 < len(x)]).strip()
         return values
 
     def to_dc(self, identifier):
@@ -215,39 +241,90 @@ class biblio( object ):
 
             # get first title
             for key_title in ["Title", "Original title", "English title", "Czech title"]:
-                val = self._fill_values( "title", rec.get, [key_title], vals )
+                val = self._fill_values("title", rec.get, [key_title], vals)
                 if 0 < len(val):
                     break
 
-            self._fill_values( "creators", self.authors.ids.get, rec.get( "Author(s)" ), vals )
+            self._fill_values("creators", self.authors.ids.get,
+                              rec.get("Author(s)"), vals)
             # Project identifier info:eu-repo/grantAgreement
             self._fill_values(
-                "relations", lambda k: self.grants.ids[k]["openaire_id"], rec.get( "Supported by" ), vals
+                "relations", lambda k: self.grants.ids[k][
+                    "openaire_id"], rec.get("Supported by"), vals
             )
 
             # Access level info:eu-repo/semantics
             # XXX: hardcoded openaccess
-            vals["rights"] %= 'info:eu-repo/semantics/openAccess'
+            vals["rights"] %= self._find_access(rec, vals["ids"])
 
             # XXX: subject/keywords nothing to map?
             #        #dc_subject
             # description...use english abstract
-            self._fill_values( "descriptions", rec.get, ["English abstract"], vals )
+            self._fill_values("descriptions", rec.get, [
+                              "English abstract"], vals)
 
             # Publisher
-            self._fill_values( "publishers", rec.get, ["Publisher"], vals )
+            self._fill_values("publishers", rec.get, ["Publisher"], vals)
 
             # publication date #Use Year for now, there is also a date field
-            self._fill_values( "dates", rec.get, ["Year"], vals )
+            self._fill_values("dates", rec.get, ["Year"], vals)
 
             #
-            self._fill_values( "type", rec.get, ["Type"], vals, biblio.map_to_type )
+            self._fill_values("type", rec.get, [
+                              "Type"], vals, biblio.map_to_type)
 
         except KeyError, e:
-            _logger.error( "Error fetching mandatory metadata for %s [%s]", identifier, repr( e ) )
+            _logger.error(
+                "Error fetching mandatory metadata for %s [%s]", identifier, repr(e))
             return None
 
-        return biblio.dc_template % record_template.strip().format( **vals )
+        return biblio.dc_template % record_template.strip().format(**vals)
+
+    def _find_access(self, rec, id_str):
+        if id_str in self._access_map:
+            return self._access_map[id_str]
+
+        open_access = "info:eu-repo/semantics/openAccess"
+        closed_access = "info:eu-repo/semantics/closedAccess"
+
+        url = rec.get("URL")
+        access = closed_access
+        if url is not None and 0 < len(url):
+            self._cnts["urls"] += 1
+            if not ("[" == url[0] and "]" == url[-1]):
+                _logger.warn("Invalid url: %s", url)
+            elif "], [" in url:
+                _logger.warn("Multiple urls: %s", url)
+            else:
+                url = url[1:-1]
+
+                is_magic = False
+                for magic in (
+                        "github.com",
+                        "hdl.handle.net/",
+                        "http://www.lrec-conf.org/",
+                        "http://ufal.mff.cuni.cz/",
+                ):
+                    if magic in url:
+                        access = open_access
+                        is_magic = True
+                        break
+
+                status = -1
+                if not is_magic:
+                    try:
+                        r = requests.head(url)
+                        status = r.status_code
+                        if status == 200:
+                            if "/pdf" in r.headers['content-type']:
+                                access = open_access
+                    except requests.ConnectionError, e:
+                        _logger.warn("Url [%s] problem [%s]", url, repr(e))
+
+                print "%3d. URL: [%3s] [%15s] %s" % (
+                    self._cnts["urls"], status, access[-15:], url
+                )
+        self._access_map[id_str] = access
 
     @staticmethod
     def map_to_type(tp):
@@ -292,7 +369,8 @@ class biblio( object ):
             _logger.warn("Type mapping not found for [%s]", tp)
         return biblio.type_mapping.get(tp, "info:eu-repo/semantics/other")
 
-class Provider( object ):
+
+class Provider(object):
     """
     Metadata provider for DDI Codebook XML files.
     """
@@ -308,7 +386,7 @@ class Provider( object ):
             domain_name: str
                 The domain name part of the OAI identifiers.
         """
-        self.oai_identifier_prefix = 'oai:{0}:'.format( domain_name )
+        self.oai_identifier_prefix = 'oai:{0}:'.format(domain_name)
         self.directory = directory
 
     def formats(self):
@@ -336,13 +414,14 @@ class Provider( object ):
             iterable of str:
                 OAI identifiers of all items
         """
-        logging.debug( 'Parsing directory {0} for biblio related files...', self.directory )
+        logging.debug(
+            'Parsing directory {0} for biblio related files...', self.directory)
 
         #
-        self.biblio = biblio( self.directory )
+        self.biblio = biblio(self.directory)
 
         for identifier in self.biblio.identifiers:
-            yield self.make_identifier( identifier )
+            yield self.make_identifier(identifier)
 
     def has_changed(self, identifier, since):
         """
@@ -409,7 +488,7 @@ class Provider( object ):
         if metadata_prefix != 'oai_dc':
             return None
 
-        return self.biblio.to_dc( identifier[len( self.oai_identifier_prefix ):] )
+        return self.biblio.to_dc(identifier[len(self.oai_identifier_prefix):])
 
     def make_identifier(self, identifier):
         """

@@ -28,7 +28,10 @@ class base_biblio(object):
             else:
                 v = ftor(elem)
                 if v is not None:
-                    self.ids[elem.get('Id')] = v
+                    # we want to use different ids e.g., in attachments
+                    id_str = elem.get('Id') if not isinstance(v, dict) \
+                        else v.get("id", elem.get('Id'))
+                    self.ids[id_str] = v
         _logger.info("Found [%d] entries in [%s]", len(self.ids), self.f)
 
 
@@ -100,6 +103,17 @@ class grants(base_biblio):
             _logger.error(
                 "Failed to uniquely identify openaire project from code %s", code)
             return None
+
+
+class attachments(base_biblio):
+
+    def __init__(self, f):
+        def filter_ids(elem):
+            d = dict((x.get("Name"), x.text) for x in elem)
+            # publication id is in Parent
+            d["id"] = elem.get('Parent')
+            return d
+        super(attachments, self).__init__(f, filter_ids)
 
 
 class publications(base_biblio):
@@ -177,18 +191,21 @@ class biblio(object):
     def __init__(self, d):
         # List of openaire projects as used and fetched by dspace.
         # [dspace]/config/openaire-cache.list
+        self.attachments = attachments(os.path.join(d, "attachedfiles.xml"))
         self.openaire = Openaire(os.path.join(
             "input_openaire", "openaire-cache.list"))
         self.authors = authors(os.path.join(d, "authors.xml"))
         self.grants = grants(os.path.join(d, "grants.xml"), self.openaire)
         self.publications = publications(
-            os.path.join(d, "publications.xml"), self.grants)
+            os.path.join(d, "publications.xml"), self.grants
+        )
         self.identifiers = self.publications.ids
         self._cnts = defaultdict(int)
         self._access_map = json.load(open(biblio.access_map_file, mode="r")) \
             if os.path.exists(biblio.access_map_file) else {}
 
     def __del__(self):
+        print self._cnts
         if 0 < len(self._access_map):
             json.dump(
                 self._access_map,
@@ -245,23 +262,29 @@ class biblio(object):
                 if 0 < len(val):
                     break
 
-            self._fill_values("creators", self.authors.ids.get,
-                              rec.get("Author(s)"), vals)
+            self._fill_values(
+                "creators", self.authors.ids.get, rec.get("Author(s)"), vals
+            )
             # Project identifier info:eu-repo/grantAgreement
             self._fill_values(
-                "relations", lambda k: self.grants.ids[k][
-                    "openaire_id"], rec.get("Supported by"), vals
+                "relations",
+                lambda k: self.grants.ids[k]["openaire_id"],
+                rec.get("Supported by"),
+                vals
             )
 
             # Access level info:eu-repo/semantics
             # XXX: hardcoded openaccess
-            vals["rights"] %= self._find_access(rec, vals["ids"])
+            access = self._find_access(rec, identifier)
+            vals["rights"] %= access
+            self._cnts[access] += 1
 
             # XXX: subject/keywords nothing to map?
             #        #dc_subject
             # description...use english abstract
-            self._fill_values("descriptions", rec.get, [
-                              "English abstract"], vals)
+            self._fill_values(
+                "descriptions", rec.get, ["English abstract"], vals
+            )
 
             # Publisher
             self._fill_values("publishers", rec.get, ["Publisher"], vals)
@@ -270,8 +293,9 @@ class biblio(object):
             self._fill_values("dates", rec.get, ["Year"], vals)
 
             #
-            self._fill_values("type", rec.get, [
-                              "Type"], vals, biblio.map_to_type)
+            self._fill_values(
+                "type", rec.get, ["Type"], vals, biblio.map_to_type
+            )
 
         except KeyError, e:
             _logger.error(
@@ -281,50 +305,71 @@ class biblio(object):
         return biblio.dc_template % record_template.strip().format(**vals)
 
     def _find_access(self, rec, id_str):
-        if id_str in self._access_map:
-            return self._access_map[id_str]
-
         open_access = "info:eu-repo/semantics/openAccess"
         closed_access = "info:eu-repo/semantics/closedAccess"
 
-        url = rec.get("URL")
-        access = closed_access
-        if url is not None and 0 < len(url):
-            self._cnts["urls"] += 1
-            if not ("[" == url[0] and "]" == url[-1]):
-                _logger.warn("Invalid url: %s", url)
-            elif "], [" in url:
-                _logger.warn("Multiple urls: %s", url)
-            else:
-                url = url[1:-1]
+        # already done?
+        if id_str in self._access_map:
+            return self._access_map[id_str]
 
-                is_magic = False
-                for magic in (
-                        "github.com",
-                        "hdl.handle.net/",
-                        "http://www.lrec-conf.org/",
-                        "http://ufal.mff.cuni.cz/",
-                ):
-                    if magic in url:
-                        access = open_access
-                        is_magic = True
+        access = None
+
+        # based on attachment
+        attach = self.attachments.ids.get(id_str, {})
+        if "pdf" in attach.get("FileCType", ""):
+            if "public" == attach.get("Access", ""):
+                access = open_access
+
+        # based on URL
+        if access is None:
+            urls = rec.get("URL")
+            access = closed_access
+            if urls is not None and 0 < len(urls):
+                self._cnts["urls"] += 1
+                if not ("[" == urls[0] and "]" == urls[-1]):
+                    _logger.warn("Invalid url: %s", urls)
+                    urls = []
+                if "], [" in urls:
+                    _logger.warn("Multiple urls: %s", urls)
+                    # todo: use regexp
+                    urls = [x.lstrip("[").rstrip("]")
+                            for x in urls.split("], [")]
+                else:
+                    urls = [urls[1:-1]]
+
+                for url in urls:
+                    if access != closed_access:
                         break
+                    is_magic = False
+                    for magic in (
+                            "github.com",
+                            "hdl.handle.net/",
+                            "http://www.lrec-conf.org/",
+                            "http://ufal.mff.cuni.cz/",
+                    ):
+                        if magic in url:
+                            access = open_access
+                            is_magic = True
+                            break
 
-                status = -1
-                if not is_magic:
-                    try:
-                        r = requests.head(url)
-                        status = r.status_code
-                        if status == 200:
-                            if "/pdf" in r.headers['content-type']:
-                                access = open_access
-                    except requests.ConnectionError, e:
-                        _logger.warn("Url [%s] problem [%s]", url, repr(e))
+                    status = -1
+                    if not is_magic:
+                        try:
+                            r = requests.head(url)
+                            status = r.status_code
+                            if status == 200:
+                                if "/pdf" in r.headers['content-type']:
+                                    access = open_access
+                        except requests.ConnectionError, e:
+                            _logger.warn("Url [%s] problem [%s]", url, repr(e))
 
-                print "%3d. URL: [%3s] [%15s] %s" % (
-                    self._cnts["urls"], status, access[-15:], url
-                )
+                    print "%3d. URL: [%3s] [%15s] %s" % (
+                        self._cnts["urls"], status, access[-15:], url
+                    )
+
+        # store info
         self._access_map[id_str] = access
+        return access
 
     @staticmethod
     def map_to_type(tp):

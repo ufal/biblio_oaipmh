@@ -329,7 +329,7 @@ class biblio(object):
                 if not ("[" == urls[0] and "]" == urls[-1]):
                     _logger.warn("Invalid url: %s", urls)
                     urls = []
-                if "], [" in urls:
+                elif "], [" in urls:
                     _logger.warn("Multiple urls: %s", urls)
                     # todo: use regexp
                     urls = [x.lstrip("[").rstrip("]")
@@ -354,13 +354,15 @@ class biblio(object):
 
                     status = -1
                     if not is_magic:
+                        # fetching problems
+                        # http://stackoverflow.com/questions/18337630/what-is-x-content-type-options-nosniff
                         try:
                             r = requests.head(url)
                             status = r.status_code
                             if status == 200:
                                 if "/pdf" in r.headers['content-type']:
                                     access = open_access
-                        except requests.ConnectionError, e:
+                        except Exception, e:
                             _logger.warn("Url [%s] problem [%s]", url, repr(e))
 
                     print "%3d. URL: [%3s] [%15s] %s" % (

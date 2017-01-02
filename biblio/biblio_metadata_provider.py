@@ -314,11 +314,17 @@ class biblio(object):
 
         access = None
 
+        # based on the appropriate field if available
+        oa = rec.get("Open access")
+        if oa == '1':
+            access = open_access
+
         # based on attachment
-        attach = self.attachments.ids.get(id_str, {})
-        if "pdf" in attach.get("FileCType", ""):
-            if "public" == attach.get("Access", ""):
-                access = open_access
+        if access is None:
+            attach = self.attachments.ids.get(id_str, {})
+            if "pdf" in attach.get("FileCType", ""):
+                if "public" == attach.get("Access", ""):
+                    access = open_access
 
         # based on URL
         if access is None:

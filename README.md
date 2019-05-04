@@ -34,3 +34,9 @@ Nginx serving this web app may need path tweaking in kuha/oai/static
 ## OpenAIRE cached projects
 
 These should be updated on a regular basis as well.
+
+## Where to look
+
+* lindat/vm_repo/opt/biblio-oaipmh
+* https://github.com/ufal/biblio_oaipmh/blob/master/biblio/biblio_metadata_provider.py#L69
+

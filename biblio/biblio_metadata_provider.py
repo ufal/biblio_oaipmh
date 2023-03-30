@@ -62,6 +62,9 @@ class authors(base_biblio):
 class grants(base_biblio):
     supported = ("EU",)
     unsupported_prefixex = ("FP6", )
+    fallback_mapping = {
+        "HORIZON-CL4-2021-DATA-01-03": "info:eu-repo/grantAgreement/EC/HE/101070350"
+    }
 
     def __init__(self, f, openaire):
         def filter_ids(elem):
@@ -99,6 +102,9 @@ class grants(base_biblio):
 
         if len(results) == 1:
             return results[0]
+        elif code in grants.fallback_mapping:
+            _logger.info("Using fallback mapping: %s => %s", code, grants.fallback_mapping[code])
+            return grants.fallback_mapping[code]
         else:
             _logger.error(
                 "Failed to uniquely identify openaire project from code %s", code)
